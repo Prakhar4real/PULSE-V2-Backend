@@ -1,0 +1,12 @@
+# Ignore the virtual environment
+venv/
+
+# Ignore the secrets file
+.env
+
+# Ignore the SQLite database
+db.sqlite3
+
+# Ignore Python cache
+__pycache__/
+*.pyc
