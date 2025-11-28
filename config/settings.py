@@ -45,10 +45,12 @@ INSTALLED_APPS = [
     # 3rd Party Apps
     'rest_framework',
     'rest_framework_simplejwt',
+    'corsheaders',
     'decouple',
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -147,4 +149,13 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60), # Token lasts 1 hour
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),    # Refresh key lasts 1 day
+    
 }
+# CORS SETTINGS
+CORS_ALLOW_ALL_ORIGINS = True
+
+# MEDIA FILES (User Uploads)
+import os
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
