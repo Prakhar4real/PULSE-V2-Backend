@@ -2,6 +2,7 @@
 from django.urls import path
 from .views import CreateUserView, ReportListCreateView, ReportDetailView, UserProfileView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .views import ChatBotView
 
 urlpatterns = [
     # Auth
@@ -12,6 +13,8 @@ urlpatterns = [
     # Reports
     path("reports/", ReportListCreateView.as_view(), name="report-list"),
     path("reports/delete/<int:pk>/", ReportDetailView.as_view(), name="delete-report"),
+
+    path("ai/chat/", ChatBotView.as_view(), name="ai-chat"),
 
     # User Profile (The new Gamification link)
     path("user/profile/", UserProfileView.as_view(), name="user-profile"),
