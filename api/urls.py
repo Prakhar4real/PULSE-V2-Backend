@@ -1,21 +1,38 @@
-# api/urls.py
 from django.urls import path
-from .views import CreateUserView, ReportListCreateView, ReportDetailView, UserProfileView
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .views import ChatBotView
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
+from .views import (
+    RegisterView, 
+    UserProfileView, 
+    ReportListCreateView, 
+    ReportDetailView, 
+    ReportDeleteView, 
+    AIChatView, 
+    GamificationViewSet
+)
 
 urlpatterns = [
-    # Auth
-    path("user/register/", CreateUserView.as_view(), name="register"),
-    path("token/", TokenObtainPairView.as_view(), name="get_token"),
-    path("token/refresh/", TokenRefreshView.as_view(), name="refresh"),
+    # --- AUTHENTICATION (The Missing Login Links) ---
+    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), # LOGIN URL
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-    # Reports
-    path("reports/", ReportListCreateView.as_view(), name="report-list"),
-    path("reports/delete/<int:pk>/", ReportDetailView.as_view(), name="delete-report"),
+    path('register/', RegisterView.as_view(), name='register'),
+    path('user/profile/', UserProfileView.as_view(), name='user-profile'),
 
-    path("ai/chat/", ChatBotView.as_view(), name="ai-chat"),
+    # --- REPORTS ---
+    path('reports/', ReportListCreateView.as_view(), name='report-list-create'),
+    path('reports/<int:pk>/', ReportDetailView.as_view(), name='report-detail'),
+    path('reports/<int:pk>/delete/', ReportDeleteView.as_view(), name='report-delete'),
 
-    # User Profile (The new Gamification link)
-    path("user/profile/", UserProfileView.as_view(), name="user-profile"),
+    # --- AI CHAT ---
+    path('chat/', AIChatView.as_view(), name='ai-chat'),
+
+    # --- GAMIFICATION ---
+    path('leaderboard/', GamificationViewSet.as_view({'get': 'leaderboard'}), name='leaderboard'),
+    path('missions/', GamificationViewSet.as_view({'get': 'missions'}), name='missions'),
+    path('missions/<int:pk>/join/', GamificationViewSet.as_view({'post': 'join'}), name='mission-join'),
+
+    path('missions/<int:pk>/submit_proof/', GamificationViewSet.as_view({'post': 'submit_proof'}), name='mission-submit-proof'),
 ]

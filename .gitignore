@@ -10,3 +10,4 @@ db.sqlite3
 # Ignore Python cache
 __pycache__/
 *.pyc
+media/

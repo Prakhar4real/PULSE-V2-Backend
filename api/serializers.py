@@ -1,41 +1,99 @@
-from django.contrib.auth.models import User
-from .models import Report, Profile
-from .models import Report 
 from rest_framework import serializers
-from django.db import IntegrityError
-from .models import Profile
+from django.contrib.auth.models import User
+from .models import Report, Profile, Mission, UserMission
+from .utils import ai_verify_image
 
-
-class UserSerializer(serializers.ModelSerializer):
-    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True, allow_null=True)
+# 1. USER REGISTRATION SERIALIZER
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "username", "password", "phone_number"]
+        fields = ('username', 'password', 'email')
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['username'],
+            password=validated_data['password'],
+            email=validated_data.get('email', '')
+        )
+        return user
+
+# 2. STANDARD USER SERIALIZER
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "username", "password"]
         extra_kwargs = {"password": {"write_only": True}}
 
     def create(self, validated_data):
-        # 1. Get the phone number
-        phone_raw = validated_data.pop('phone_number', None)
-        
-        # 2. Create the User 
         user = User.objects.create_user(**validated_data)
-
-        try:
-            
-            profile = Profile.objects.get(user=user)
-            profile.phone_number = phone_raw
-            profile.save()
-        except Profile.DoesNotExist:
-           
-            Profile.objects.create(user=user, phone_number=phone_raw)
-        
         return user
-    
-class ReportSerializer(serializers.ModelSerializer):
-    username = serializers.ReadOnlyField(source='user.username') # Show username, don't ask for ID
 
+# 3. REPORT SERIALIZER (With AI Logic)
+class ReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = Report
-        fields = ['id', 'username', 'title', 'description', 'city', 'latitude', 'longitude', 'image', 'status', 'created_at']
-        extra_kwargs = {'image': {'required': False}} # Image is optional
+        fields = ["id", "title", "description", "category", "location", "image", "status", "ai_analysis", "ai_confidence", "created_at"]
+        read_only_fields = ["user", "status", "created_at", "ai_analysis", "ai_confidence"]
+
+    def create(self, validated_data):
+        # 1. Get the image and description
+        image = validated_data.get('image')
+        description = validated_data.get('description', '')
+        
+        # 2. Run AI Verification (if image exists)
+        ai_status = "Pending"
+        ai_confidence = 0
+        ai_reason = "No image uploaded"
+        final_status = "pending"
+
+        if image:
+            print("AI is analyzing the evidence...")
+            # Calls the utility function 
+            match, confidence, reason = ai_verify_image(image, description)
+            
+            ai_confidence = confidence
+            ai_reason = reason
+            
+            # --- THE DECISION LOGIC ---
+            if match and confidence > 85:
+                print(f"AI Verified! ({confidence}%) Auto-approving.")
+                ai_status = "Verified"
+                final_status = "verified" # AUTO-APPROVE!
+            else:
+                print(f"AI Unsure ({confidence}%). Sent to Admin.")
+                ai_status = "Flagged"
+                final_status = "pending" # Keep pending for Admin
+
+        # 3. Save to Database
+        report = Report.objects.create(
+            **validated_data,
+            status=final_status,
+            ai_analysis=ai_reason,     # Save the AI's explanation
+            ai_confidence=ai_confidence # Save the score (0-100)
+        )
+        return report
+
+# 4. GAMIFICATION SERIALIZERS 
+
+class MissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Mission
+        fields = '__all__'
+
+class UserMissionSerializer(serializers.ModelSerializer):
+    mission_title = serializers.ReadOnlyField(source='mission.title')
+
+    class Meta:
+        model = UserMission
+        
+        fields = ['id', 'mission', 'mission_title', 'status', 'submitted_at']
+        read_only_fields = ['status', 'submitted_at']
+
+class LeaderboardSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username')
+    
+    class Meta:
+        model = Profile
+        fields = ['username', 'points', 'level']
