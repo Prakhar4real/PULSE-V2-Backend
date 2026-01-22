@@ -1,26 +1,28 @@
 from django.contrib import admin
-from .models import Profile, Report, Mission, UserMission
+from .models import Profile, Report, Mission, UserMission, Notice
 
+# --- 1. Simple Registrations ---
+
+admin.site.register(Profile)
+admin.site.register(Mission)
+
+# --- 2. Custom Admin for Reports ---
+@admin.register(Report)
 class ReportAdmin(admin.ModelAdmin):
     list_display = ('title', 'user', 'status', 'ai_confidence', 'created_at')
-    list_filter = ('status', 'category')
-    search_fields = ('title', 'description', 'location')
+    list_filter = ('status', 'created_at')
+    search_fields = ('title', 'description')
 
-class MissionAdmin(admin.ModelAdmin):
-    list_display = ('title', 'points_reward', 'icon') 
+# --- 3. Custom Admin for User Missions ---
 
-# Option A: Keep the decorator
 @admin.register(UserMission)
 class UserMissionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'mission', 'status', 'ai_analysis_preview', 'submitted_at')
-    list_filter = ('status', 'mission')
-    readonly_fields = ('ai_analysis',) 
+    list_display = ('user', 'mission', 'status', 'submitted_at')
+    list_filter = ('status',)
 
-    def ai_analysis_preview(self, obj):
-        return obj.ai_analysis[:50] + "..." if obj.ai_analysis else "Pending"
-    ai_analysis_preview.short_description = "AI Opinion"
-
-# Register the others normally
-admin.site.register(Profile)
-admin.site.register(Report, ReportAdmin)
-admin.site.register(Mission, MissionAdmin)
+# --- 4. Custom Admin for Notices ---
+@admin.register(Notice)
+class NoticeAdmin(admin.ModelAdmin):
+    list_display = ('title', 'author', 'is_pinned', 'created_at')
+    list_filter = ('is_pinned', 'created_at')
+    search_fields = ('title', 'content')

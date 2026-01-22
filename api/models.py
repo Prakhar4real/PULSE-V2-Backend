@@ -3,6 +3,8 @@ from django.contrib.auth.models import User
 import google.generativeai as genai
 from decouple import config
 from PIL import Image
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 # --- CONFIGURE GEMINI AI ---
 GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
@@ -83,11 +85,11 @@ class Report(models.Model):
                 response = model.generate_content([prompt, img])
                 
                 self.ai_analysis = response.text
-                if "true" in response.text.lower():
-                    self.ai_confidence = 90
+                if '"match": true' in response.text.lower() or "'match': true" in response.text.lower():
+                    self.ai_confidence = 95
                     self.status = 'verified'
                 else:
-                    self.ai_confidence = 10
+                    self.ai_confidence = 0
                 print(f"AI Success: {self.status}")
 
             except Exception as e:
@@ -122,3 +124,24 @@ class UserMission(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.mission.title}"
+    
+    # --- 4. COMMUNITY NOTICES ---
+class Notice(models.Model):
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    author = models.ForeignKey(User, on_delete=models.CASCADE)
+    is_pinned = models.BooleanField(default=False) # Important notices stick to top
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+    
+    # --- Auto-create Profile when User registers ---
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+   
+    try:
+        instance.profile.save()
+    except Exception:
+       
+        Profile.objects.create(user=instance)

@@ -2,6 +2,14 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Report, Profile, Mission, UserMission
 from .utils import ai_verify_image
+from .models import Notice
+
+class NoticeSerializer(serializers.ModelSerializer):
+    author_name = serializers.ReadOnlyField(source='author.username')
+
+    class Meta:
+        model = Notice
+        fields = ['id', 'title', 'content', 'author_name', 'is_pinned', 'created_at']
 
 # 1. USER REGISTRATION SERIALIZER
 class RegisterSerializer(serializers.ModelSerializer):
@@ -97,3 +105,5 @@ class LeaderboardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ['username', 'points', 'level']
+
+        

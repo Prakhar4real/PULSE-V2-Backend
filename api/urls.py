@@ -10,15 +10,17 @@ from .views import (
     ReportDetailView, 
     ReportDeleteView, 
     AIChatView, 
-    GamificationViewSet
+    GamificationViewSet,
+    NoticeListCreateView
 )
 
 urlpatterns = [
-    # --- AUTHENTICATION (The Missing Login Links) ---
+    # --- AUTHENTICATION ---
+    path('notices/', NoticeListCreateView.as_view(), name='notice-list-create'),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'), # LOGIN URL
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-    path('register/', RegisterView.as_view(), name='register'),
+    path('user/register/', RegisterView.as_view(), name='register'),
     path('user/profile/', UserProfileView.as_view(), name='user-profile'),
 
     # --- REPORTS ---
@@ -27,7 +29,7 @@ urlpatterns = [
     path('reports/<int:pk>/delete/', ReportDeleteView.as_view(), name='report-delete'),
 
     # --- AI CHAT ---
-    path('chat/', AIChatView.as_view(), name='ai-chat'),
+    path('ai/chat/', AIChatView.as_view(), name='ai-chat'),
 
     # --- GAMIFICATION ---
     path('leaderboard/', GamificationViewSet.as_view({'get': 'leaderboard'}), name='leaderboard'),

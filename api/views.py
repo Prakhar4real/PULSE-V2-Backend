@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from decouple import config
 import google.generativeai as genai
 from twilio.rest import Client
+from .models import Report, Profile, Mission, UserMission, Notice
 
 # Import models and serializers
 from .models import Report, Profile, Mission, UserMission
@@ -17,8 +18,19 @@ from .serializers import (
     ReportSerializer, 
     MissionSerializer, 
     UserMissionSerializer,
-    LeaderboardSerializer
+    LeaderboardSerializer,
+    NoticeSerializer
 )
+
+# --- CUSTOM PERMISSION ---
+class IsAdminOrReadOnly(permissions.BasePermission):
+   
+    def has_permission(self, request, view):
+       
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        return request.user and request.user.is_staff
 
 # --- CONFIGURATION ---
 try:
@@ -62,7 +74,8 @@ class UserProfileView(APIView):
                 "username": user.username, 
                 "points": user.profile.points, 
                 "level": user.profile.level,
-                "phone": user.profile.phone_number
+                "phone": user.profile.phone_number,
+                "is_staff": user.is_staff
             })
         except Exception:
             return Response({"username": user.username, "points": 0, "level": "N/A"})
@@ -266,7 +279,7 @@ class GamificationViewSet(viewsets.ViewSet):
             # 2. Get Image
             image = request.data.get('image')
             if not image:
-                print("❌ No image found in request data.")
+                print("No image found in request data.")
                 return Response({'error': 'No image uploaded'}, status=400)
 
             # 3. RUN AI ANALYSIS (With Crash Protection)
@@ -276,9 +289,9 @@ class GamificationViewSet(viewsets.ViewSet):
                 # Import here to avoid circular import issues
                 from .utils import ai_verify_image 
                 match, confidence, reason = ai_verify_image(image, mission.description)
-                print(f"✅ AI Result: Match={match}, Conf={confidence}, Reason={reason}")
+                print(f"AI Result: Match={match}, Conf={confidence}, Reason={reason}")
             except Exception as e:
-                print(f"🔥 AI CRASHED: {e}")
+                print(f"AI CRASHED: {e}")
                 return Response({'error': f"AI Service Error: {str(e)}"}, status=500)
 
             # 4. SAVE RESULTS TO DATABASE (Crucial for Admin Panel)
@@ -296,7 +309,7 @@ class GamificationViewSet(viewsets.ViewSet):
                 
                 return Response({
                     'status': 'verified', 
-                    'message': f'✅ Verified! You earned {mission.points_reward} XP!',
+                    'message': f'Verified! You earned {mission.points_reward} XP!',
                     'reason': reason
                 })
             else:
@@ -304,7 +317,7 @@ class GamificationViewSet(viewsets.ViewSet):
                 user_mission.save() 
                 return Response({
                     'status': 'rejected', 
-                    'message': f'❌ AI Rejection: {reason}',
+                    'message': f'AI Rejection: {reason}',
                     'reason': reason
                 })
 
@@ -315,3 +328,16 @@ class GamificationViewSet(viewsets.ViewSet):
         except Exception as e:
             print(f"🔥 SERVER CRASH: {e}")
             return Response({'error': str(e)}, status=500)
+        
+
+class NoticeListCreateView(generics.ListCreateAPIView):
+    serializer_class = NoticeSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        # Show Pinned notices first, then newest ones
+        return Notice.objects.all().order_by('-is_pinned', '-created_at')
+
+    def perform_create(self, serializer):
+        # Automatically set the logged-in user as the author
+        serializer.save(author=self.request.user)        
