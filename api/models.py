@@ -63,6 +63,9 @@ class Report(models.Model):
     location = models.CharField(max_length=255)
     image = models.ImageField(upload_to='reports/', blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    resolved_image = models.ImageField(upload_to='resolved_proofs/', blank=True, null=True)
+    feedback = models.TextField(blank=True, null=True)
+    rating = models.IntegerField(default=0)
     
     # AI Fields
     ai_analysis = models.TextField(blank=True, null=True)

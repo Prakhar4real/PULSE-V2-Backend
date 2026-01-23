@@ -42,7 +42,7 @@ class UserSerializer(serializers.ModelSerializer):
 class ReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = Report
-        fields = ["id", "title", "description", "category", "location", "image", "status", "ai_analysis", "ai_confidence", "created_at"]
+        fields = '__all__'
         read_only_fields = ["user", "status", "created_at", "ai_analysis", "ai_confidence"]
 
     def create(self, validated_data):
