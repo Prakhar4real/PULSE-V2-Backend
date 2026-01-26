@@ -1,9 +1,10 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Report, Profile, Mission, UserMission
+from .models import Report, Profile, Mission, UserMission, Notice
 from .utils import ai_verify_image
-from .models import Notice
 
+
+# --- 1. NOTICE SERIALIZER ---
 class NoticeSerializer(serializers.ModelSerializer):
     author_name = serializers.ReadOnlyField(source='author.username')
 
@@ -11,23 +12,37 @@ class NoticeSerializer(serializers.ModelSerializer):
         model = Notice
         fields = ['id', 'title', 'content', 'author_name', 'is_pinned', 'created_at']
 
-# 1. USER REGISTRATION SERIALIZER
+# --- 2. USER REGISTRATION SERIALIZER ---
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    
+    phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
-        fields = ('username', 'password', 'email')
+        fields = ('username', 'password', 'email', 'phone_number')
 
     def create(self, validated_data):
+        # 1. Extract phone number separate from user data
+        phone = validated_data.pop('phone_number', None)
+        
+        # 2. Create the User
         user = User.objects.create_user(
             username=validated_data['username'],
             password=validated_data['password'],
             email=validated_data.get('email', '')
         )
+
+        # 3. Save Phone Number to Profile
+        if phone:
+            
+            profile, created = Profile.objects.get_or_create(user=user)
+            profile.phone_number = phone
+            profile.save()
+
         return user
 
-# 2. STANDARD USER SERIALIZER
+# --- 3. STANDARD USER SERIALIZER ---
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
@@ -38,17 +53,39 @@ class UserSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         return user
 
-# 3. REPORT SERIALIZER (With AI Logic)
+# --- 4. USER PROFILE SERIALIZER (Required for Dashboard) ---
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ['username', 'email', 'bio', 'phone_number', 'profile_picture']
+
+# --- 5. REPORT SERIALIZER ---
 class ReportSerializer(serializers.ModelSerializer):
+    
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
+
     class Meta:
         model = Report
-        fields = '__all__'
+       
+        fields = [
+            'id', 'user', 'title', 'description', 'category', 
+            'image', 'location', 'latitude', 'longitude', 
+            'status', 'created_at', 'ai_analysis', 'ai_confidence',
+            'resolved_image', 'feedback' 
+        ]
         read_only_fields = ["user", "status", "created_at", "ai_analysis", "ai_confidence"]
 
     def create(self, validated_data):
         # 1. Get the image and description
         image = validated_data.get('image')
         description = validated_data.get('description', '')
+
+        latitude = validated_data.get('latitude')
+        longitude = validated_data.get('longitude')
         
         # 2. Run AI Verification (if image exists)
         ai_status = "Pending"
@@ -81,9 +118,16 @@ class ReportSerializer(serializers.ModelSerializer):
             ai_analysis=ai_reason,     # Save the AI's explanation
             ai_confidence=ai_confidence # Save the score (0-100)
         )
+
+
+        if latitude and longitude:
+            report.latitude = float(latitude)
+            report.longitude = float(longitude)
+            report.save()
+            
         return report
 
-# 4. GAMIFICATION SERIALIZERS 
+# --- 6. GAMIFICATION SERIALIZERS ---
 
 class MissionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -95,15 +139,13 @@ class UserMissionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = UserMission
-        
         fields = ['id', 'mission', 'mission_title', 'status', 'submitted_at']
         read_only_fields = ['status', 'submitted_at']
 
 class LeaderboardSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username')
-    
+    profile_picture = serializers.ImageField(read_only=True) 
+
     class Meta:
         model = Profile
-        fields = ['username', 'points', 'level']
-
-        
+        fields = ['username', 'points', 'level', 'profile_picture']

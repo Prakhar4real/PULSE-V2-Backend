@@ -1,6 +1,6 @@
 import google.generativeai as genai
 from decouple import config
-import PIL.Image  # <--- THIS IS THE MISSING KEY 🔑
+import PIL.Image  
 import json
 
 genai.configure(api_key=config('GEMINI_API_KEY'))

@@ -43,14 +43,30 @@ def get_best_model():
         return None
 
 # --- 1. USER PROFILE ---
+from django.db import models
+from django.contrib.auth.models import User
+
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     points = models.IntegerField(default=0)
     level = models.CharField(max_length=50, default="Scout")
     phone_number = models.CharField(max_length=15, blank=True, null=True)
+    
+    bio = models.TextField(blank=True, null=True)
+    profile_picture = models.ImageField(upload_to='profile_pics/', blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        # Auto-calculate Level
+        if self.points >= 500: self.level = "Hero"
+        elif self.points >= 300: self.level = "Guardian"
+        elif self.points >= 100: self.level = "Scout"
+        else: self.level = "Citizen"
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.user.username
+    
+
 
 # --- 2. REPORT INCIDENT ---
 class Report(models.Model):
@@ -66,11 +82,19 @@ class Report(models.Model):
     resolved_image = models.ImageField(upload_to='resolved_proofs/', blank=True, null=True)
     feedback = models.TextField(blank=True, null=True)
     rating = models.IntegerField(default=0)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
     
     # AI Fields
     ai_analysis = models.TextField(blank=True, null=True)
     ai_confidence = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Feedback Fields
+    resolved_image = models.ImageField(upload_to='resolved_reports/', blank=True, null=True)
+    feedback = models.TextField(blank=True, null=True)
 
     def save(self, *args, **kwargs):
         # AI Logic
