@@ -53,14 +53,16 @@ class UserSerializer(serializers.ModelSerializer):
         user = User.objects.create_user(**validated_data)
         return user
 
-# --- 4. USER PROFILE SERIALIZER (Required for Dashboard) ---
+# --- 4. USER PROFILE SERIALIZER ---
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
 
     class Meta:
         model = Profile
-        fields = ['username', 'email', 'bio', 'phone_number', 'profile_picture']
+        fields = ['id', 'user_id', 'username', 'email', 'bio', 'phone_number', 'profile_picture']
+
 
 # --- 5. REPORT SERIALIZER ---
 class ReportSerializer(serializers.ModelSerializer):
