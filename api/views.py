@@ -103,7 +103,7 @@ class UserProfileView(APIView):
 
 class ReportListCreateView(generics.ListCreateAPIView):
     serializer_class = ReportSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     parser_classes = (MultiPartParser, FormParser)
 
     def get_queryset(self):
@@ -111,54 +111,57 @@ class ReportListCreateView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         instance = serializer.save(user=self.request.user)
-        # Add Points
+        
+        #1. Add Points
         try:
             profile = self.request.user.profile
             profile.points += 10
             profile.save()
         except Exception as e:
-            print(f"Error updating points: {e}")
+            print(f"Gamification Error: {e}")
 
-        # Send SMS
+        # --- 2. Prepare Twilio Client ---
         sid = config('TWILIO_ACCOUNT_SID', default=None)
         token = config('TWILIO_AUTH_TOKEN', default=None)
         twilio_phone = config('TWILIO_PHONE_NUMBER', default=None)
-        admin_phone = "+919305031932" 
+        admin_phone = config('ADMIN_PHONE_NUMBER', default=None) 
 
         if sid and token:
             try:
                 client = Client(sid, token)
-                # Send to User
-                if hasattr(self.request.user, 'profile') and self.request.user.profile.phone_number:
+
+                #3. Send User SMS
+                try:
+                    user_phone = None
+                    if hasattr(self.request.user, 'profile') and self.request.user.profile.phone_number:
+                        raw_phone = str(self.request.user.profile.phone_number).strip()
+                        # Auto-format(+91)
+                        if len(raw_phone) == 10 and not raw_phone.startswith('+'):
+                            user_phone = f"+91{raw_phone}"
+                        else:
+                            user_phone = raw_phone if raw_phone.startswith('+') else f"+91{raw_phone}"
+
+                    if user_phone:
+                        client.messages.create(
+                            body=f"PULSE: Hi {self.request.user.username}, your report '{instance.title}' received! Admins will update you soon. AI Status: {instance.status}",
+                            from_=twilio_phone,
+                            to=user_phone
+                        )
+                except Exception as e:
+                    print(f"User SMS Failed (Admin still alerted): {e}")
+
+                # --- 4. Send Admin SMS ---
+                try:
                     client.messages.create(
-                        body=f"PULSE: Hi {self.request.user.username}, your report '{instance.title}' has been received! AI Status: {instance.status}",
+                        body=f"ADMIN ALERT: New Issue '{instance.title}' by {self.request.user.username}. AI Confidence: {instance.ai_confidence}%",
                         from_=twilio_phone,
-                        to=self.request.user.profile.phone_number
+                        to=admin_phone
                     )
-                # Send to Admin
-                client.messages.create(
-                    body=f"ADMIN ALERT: New Issue '{instance.title}' reported by {self.request.user.username}. AI Confidence: {instance.ai_confidence}%",
-                    from_=twilio_phone,
-                    to=admin_phone
-                )
+                except Exception as e:
+                    print(f"Admin SMS Failed: {e}")
+
             except Exception as e:
-                print(f"SMS Error: {e}")
-
-
-class ReportDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = ReportSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        return Report.objects.filter(user=self.request.user)
-
-
-class ReportDeleteView(generics.DestroyAPIView):
-    serializer_class = ReportSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return Report.objects.filter(user=self.request.user)
+                print(f"Twilio Client Error: {e}")
 
 
 # ==========================================
@@ -282,3 +285,21 @@ class TrafficStatsView(APIView):
             {"time": "4pm", "flow": 80},
         ]
         return Response(data)
+    
+    
+
+class ReportDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        # Users can only view/edit/delete their own reports
+        return Report.objects.filter(user=self.request.user)
+
+
+class ReportDeleteView(generics.DestroyAPIView):
+    serializer_class = ReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Report.objects.filter(user=self.request.user)

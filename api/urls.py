@@ -38,7 +38,7 @@ urlpatterns = [
     path('traffic-stats/', TrafficStatsView.as_view(), name='traffic-stats'), 
 
     # --- AI CHAT ---
-    path('ai/chat/', AIChatView.as_view(), name='ai-chat'),
+    path('ai-chat/', AIChatView.as_view(), name='ai-chat'),
 
     # --- GAMIFICATION ---
     path('leaderboard/', GamificationViewSet.as_view({'get': 'leaderboard'}), name='leaderboard'),
