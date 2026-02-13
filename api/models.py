@@ -6,12 +6,12 @@ from PIL import Image
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-# --- CONFIGURE GEMINI AI ---
+# CONFIGURE GEMINI AI 
 GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# --- HELPER: Auto-Select Best Model ---
+# HELPER: Auto-Select Best Model 
 def get_best_model():
     """
     Dynamically finds the best available Gemini model.
