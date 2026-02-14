@@ -1,7 +1,9 @@
 from django.urls import path
+from . import views
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
+
 )
 from .views import (
     RegisterView, 
@@ -45,4 +47,6 @@ urlpatterns = [
     path('missions/', GamificationViewSet.as_view({'get': 'missions'}), name='missions'),
     path('missions/<int:pk>/join/', GamificationViewSet.as_view({'post': 'join'}), name='mission-join'),
     path('missions/<int:pk>/submit_proof/', GamificationViewSet.as_view({'post': 'submit_proof'}), name='mission-submit-proof'),
+    
+    path('ping/', views.ping_server, name='ping'),
 ]

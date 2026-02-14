@@ -1,0 +1,15 @@
+name: Keep Render Backend Awake
+
+on:
+  schedule:
+    # Runs every 14 minutes
+    - cron: '*/14 * * * *'
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the Django Server
+        run: curl -s https://pulse-v2-backend.onrender.com/api/ping/

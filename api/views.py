@@ -13,6 +13,8 @@ from datetime import timedelta
 from django.db.models import Count, Q
 from django.db.models.functions import TruncHour
 
+from rest_framework.decorators import api_view, permission_classes
+
 # Import models
 from .models import Report, Profile, Mission, UserMission, Notice
 
@@ -303,3 +305,9 @@ class ReportDeleteView(generics.DestroyAPIView):
 
     def get_queryset(self):
         return Report.objects.filter(user=self.request.user)
+    
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ping_server(request):
+    return Response({"message": "PULSE backend is awake!"})
