@@ -175,9 +175,11 @@ STORAGES = {
         "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
     },
     "staticfiles": {
-        
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        # Collects files but does NOT compress them.
+        # This prevents the crash.
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
     },
 }
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
+# Legacy variable to stop the build crash
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
