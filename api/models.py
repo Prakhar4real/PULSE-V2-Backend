@@ -163,7 +163,7 @@ class Notice(models.Model):
     def __str__(self):
         return self.title
     
-    # --- Auto-create Profile when User registers ---
+    #Auto-create Profile when User registers
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):
    
