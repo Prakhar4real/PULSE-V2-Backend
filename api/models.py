@@ -5,42 +5,56 @@ from decouple import config
 from PIL import Image
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from google import genai
 
-# CONFIGURE GEMINI AI 
+
+# 1. CONFIG
 GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
-# HELPER: Auto-Select Best Model 
-def get_best_model():
+def get_ai_client():
     """
-    Dynamically finds the best available Gemini model.
-    Prioritizes 'flash' for speed, then falls back to 'pro'.
+    Returns the raw Client. 
+    You need this to make the actual call.
     """
+    if not GEMINI_API_KEY:
+        return None
+    return genai.Client(api_key=GEMINI_API_KEY)
+
+def get_best_model_name():
+    """
+    Dynamically scans Google's servers for the newest Flash model.
+    Returns a string (e.g., 'gemini-2.0-flash').
+    """
+    client = get_ai_client()
+    if not client:
+        return 'gemini-2.0-flash' # Safe fallback
+
     try:
-        if not GEMINI_API_KEY:
-            return None
-            
-        # List all models that support generating content
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # 1. Get list of all available models from Google
         
-        # 1. Look for the generic "latest" alias first (Best for future-proofing)
-        if 'models/gemini-flash-latest' in available_models:
-            return genai.GenerativeModel('gemini-flash-latest')
-            
-        # 2. Look for specific Flash versions (2.0, 1.5, etc.)
-        flash_models = [m for m in available_models if 'flash' in m]
-        if flash_models:
-            # Sort to get the highest version number (e.g., 2.0 > 1.5)
-            best_flash = sorted(flash_models)[-1] 
-            return genai.GenerativeModel(best_flash)
+        all_models = [m.name.replace('models/', '') for m in client.models.list()]
 
-        # 3. Fallback to any generic model
-        return genai.GenerativeModel('gemini-pro')
+        # 2. Priority: Look for "gemini-flash-latest" 
+        if 'gemini-flash-latest' in all_models:
+            return 'gemini-flash-latest'
+
+        # 3. Priority: Scan for the highest version of "Flash" (e.g., 2.0 > 1.5)
+        flash_models = [m for m in all_models if 'flash' in m]
+        if flash_models:
+            # Sort alphabetically (works for 1.5 vs 2.0) and take the last one
+            return sorted(flash_models)[-1]
+
+        # 4. Fallback: If Flash is missing, try Pro
+        pro_models = [m for m in all_models if 'pro' in m]
+        if pro_models:
+            return sorted(pro_models)[-1]
+
+        # 5. Last Resort
+        return 'gemini-2.0-flash'
 
     except Exception as e:
-        print(f"Model Selection Error: {e}")
-        return None
+        print(f"Auto-Detect Error: {e}")
+        return 'gemini-2.0-flash'
 
 # --- 1. USER PROFILE ---
 from django.db import models

@@ -12,6 +12,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Q
 from django.db.models.functions import TruncHour
+from .models import get_ai_client, get_best_model_name
 
 from rest_framework.decorators import api_view, permission_classes
 
@@ -175,16 +176,25 @@ class AIChatView(APIView):
 
     def post(self, request):
         user_message = request.data.get('message', '')
-        context = (
-            "You are PULSE AI, a helpful assistant for a Smart City Platform. "
-            "Keep answers short, professional, and helpful. "
-            f"User Question: {user_message}"
-        )
+        context = f"You are PULSE AI. Answer this: {user_message}"
+
         try:
-            model = genai.GenerativeModel('gemini-flash-latest')
-            response = model.generate_content(context)
+            # 1. Get the Client
+            client = get_ai_client()
+            
+            # 2. Get the Smart Model Name (Future Proof Logic)
+            model_name = get_best_model_name() 
+
+            # 3. Generate Content
+            response = client.models.generate_content(
+                model=model_name, 
+                contents=context
+            )
+            
             return Response({"response": response.text})
+
         except Exception as e:
+            print(f"AI Error: {e}")
             return Response({"response": "AI Service Unavailable"}, status=503)
 
 
