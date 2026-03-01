@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from rest_framework.decorators import action
 from django.contrib.auth.models import User
 from decouple import config
-import google.generativeai as genai
+from google import genai
 from twilio.rest import Client
 from django.utils import timezone
 from datetime import timedelta
