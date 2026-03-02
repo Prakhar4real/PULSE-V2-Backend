@@ -6,20 +6,15 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from rest_framework.decorators import action
 from django.contrib.auth.models import User
 from decouple import config
-from google import genai
 from twilio.rest import Client
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Q
 from django.db.models.functions import TruncHour
-from .models import get_ai_client, get_best_model_name
-
 from rest_framework.decorators import api_view, permission_classes
+from .models import get_ai_client, get_best_model_name, Report, Profile, Mission, UserMission, Notice
+from .utils import ai_verify_image  
 
-# Import models
-from .models import Report, Profile, Mission, UserMission, Notice
-
-# Import serializers
 from .serializers import (
     UserSerializer, 
     RegisterSerializer, 
@@ -31,19 +26,12 @@ from .serializers import (
     ProfileUpdateSerializer 
 )
 
-# --- CUSTOM PERMISSION ---
+#CUSTOM PERMISSION
 class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
             return True
         return request.user and request.user.is_staff
-
-# --- CONFIGURATION ---
-try:
-    genai.configure(api_key=config('GEMINI_API_KEY'))
-except Exception as e:
-    print("Warning: Gemini API Key missing or invalid.")
-
 
 # ==========================================
 #  1. AUTHENTICATION & USER VIEWS
@@ -62,24 +50,19 @@ class CreateUserView(generics.CreateAPIView):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
     serializer_class = RegisterSerializer
 
-
-
 class ProfileUpdateView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ProfileUpdateSerializer
-    parser_classes = (MultiPartParser, FormParser) # Required for Image Uploads
+    parser_classes = (MultiPartParser, FormParser)
 
     def get_object(self):
-        # Ensure the user has a profile, create one if missing
         profile, created = Profile.objects.get_or_create(user=self.request.user)
         return profile
-
 
 class UserProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -93,12 +76,11 @@ class UserProfileView(APIView):
                 "level": user.profile.level,
                 "phone_number": user.profile.phone_number,
                 "is_staff": user.is_staff,
-                "bio": user.profile.bio, # Now valid
-                "profile_picture": user.profile.profile_picture.url if user.profile.profile_picture else None # Now valid
+                "bio": user.profile.bio,
+                "profile_picture": user.profile.profile_picture.url if user.profile.profile_picture else None
             })
         except Exception:
             return Response({"username": user.username, "points": 0, "level": "N/A"})
-
 
 # ==========================================
 #  2. REPORT & TWILIO VIEWS
@@ -113,9 +95,34 @@ class ReportListCreateView(generics.ListCreateAPIView):
         return Report.objects.all().order_by('-created_at')
     
     def perform_create(self, serializer):
-        instance = serializer.save(user=self.request.user)
+        # --- FIX: CALL AI BEFORE SAVING ---
+        image = self.request.FILES.get('image')
+        description = self.request.data.get('description', 'Issue report')
         
-        #1. Add Points
+        ai_confidence = 0
+        ai_summary = "No image provided."
+        report_status = "pending"
+
+        if image:
+            
+            match, confidence, reason = ai_verify_image(image, description)
+            ai_confidence = confidence
+            ai_summary = reason
+            
+            if confidence > 80 and not match:
+                report_status = "rejected"
+            elif match and confidence > 70:
+                report_status = "verified"
+
+        # Save with AI Data
+        instance = serializer.save(
+            user=self.request.user,
+            ai_confidence=ai_confidence,
+            ai_analysis=ai_summary,
+            status=report_status
+        )
+        
+        # Add Points
         try:
             profile = self.request.user.profile
             profile.points += 10
@@ -123,7 +130,10 @@ class ReportListCreateView(generics.ListCreateAPIView):
         except Exception as e:
             print(f"Gamification Error: {e}")
 
-        # --- 2. Prepare Twilio Client ---
+        # Send SMS
+        self.send_sms_alerts(instance)
+
+    def send_sms_alerts(self, instance):
         sid = config('TWILIO_ACCOUNT_SID', default=None)
         token = config('TWILIO_AUTH_TOKEN', default=None)
         twilio_phone = config('TWILIO_PHONE_NUMBER', default=None)
@@ -132,13 +142,11 @@ class ReportListCreateView(generics.ListCreateAPIView):
         if sid and token:
             try:
                 client = Client(sid, token)
-
-                #3. Send User SMS
+                # User SMS
                 try:
                     user_phone = None
                     if hasattr(self.request.user, 'profile') and self.request.user.profile.phone_number:
                         raw_phone = str(self.request.user.profile.phone_number).strip()
-                        # Auto-format(+91)
                         if len(raw_phone) == 10 and not raw_phone.startswith('+'):
                             user_phone = f"+91{raw_phone}"
                         else:
@@ -146,29 +154,28 @@ class ReportListCreateView(generics.ListCreateAPIView):
 
                     if user_phone:
                         client.messages.create(
-                            body=f"PULSE: Hi {self.request.user.username}, your report '{instance.title}' received! Admins will update you soon. AI Status: {instance.status}",
+                            body=f"PULSE: Hi {self.request.user.username}, report '{instance.title}' received! AI Status: {instance.status}",
                             from_=twilio_phone,
                             to=user_phone
                         )
-                except Exception as e:
-                    print(f"User SMS Failed (Admin still alerted): {e}")
+                except Exception:
+                    pass # Fail silently for user
 
-                # --- 4. Send Admin SMS ---
+                # Admin SMS
                 try:
                     client.messages.create(
-                        body=f"ADMIN ALERT: New Issue '{instance.title}' by {self.request.user.username}. AI Confidence: {instance.ai_confidence}%",
+                        body=f"ADMIN ALERT: New Issue '{instance.title}'. AI Confidence: {instance.ai_confidence}%",
                         from_=twilio_phone,
                         to=admin_phone
                     )
-                except Exception as e:
-                    print(f"Admin SMS Failed: {e}")
+                except Exception:
+                    pass # Fail silently for admin
 
             except Exception as e:
                 print(f"Twilio Client Error: {e}")
 
-
 # ==========================================
-#  3. AI CHAT VIEW
+#  3. AI CHAT VIEW 
 # ==========================================
 
 class AIChatView(APIView):
@@ -179,24 +186,21 @@ class AIChatView(APIView):
         context = f"You are PULSE AI. Answer this: {user_message}"
 
         try:
-            # 1. Get the Client
+            # Use the new V2 Client Helper
             client = get_ai_client()
-            
-            # 2. Get the Smart Model Name (Future Proof Logic)
             model_name = get_best_model_name() 
-
-            # 3. Generate Content
-            response = client.models.generate_content(
-                model=model_name, 
-                contents=context
-            )
             
-            return Response({"response": response.text})
+            if client:
+                response = client.models.generate_content(
+                    model=model_name, 
+                    contents=context
+                )
+                return Response({"response": response.text})
+            return Response({"response": "AI Config Missing"}, status=503)
 
         except Exception as e:
             print(f"AI Error: {e}")
             return Response({"response": "AI Service Unavailable"}, status=503)
-
 
 # ==========================================
 #  4. GAMIFICATION VIEWSET
@@ -253,19 +257,25 @@ class GamificationViewSet(viewsets.ViewSet):
             
             if not image: return Response({'error': 'No image uploaded'}, status=400)
 
-            # --- AI LOGIC ---
-            confidence = 85 
-            reason = "AI Verified: Valid evidence provided."
+            # REAL AI LOGIC 
+            match, confidence, reason = ai_verify_image(image, mission.description)
+
+            if match and confidence > 70:
+                user_mission.status = 'completed'
+                profile = request.user.profile
+                profile.points += mission.points_reward
+                profile.save()
+                message = f'Verified! You earned {mission.points_reward} XP!'
+                status_resp = 'verified'
+            else:
+                message = f'AI could not verify this proof. Reason: {reason}'
+                status_resp = 'failed'
 
             user_mission.proof_image = image
-            user_mission.status = 'completed'
             user_mission.save()
             
-            profile = request.user.profile
-            profile.points += mission.points_reward
-            profile.save()
+            return Response({'status': status_resp, 'message': message, 'confidence': confidence})
             
-            return Response({'status': 'verified', 'message': f'Verified! You earned {mission.points_reward} XP!'})
         except Exception as e:
             return Response({'error': str(e)}, status=500)
 
@@ -284,30 +294,12 @@ class NoticeListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)       
 
-
-class TrafficStatsView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        data = [
-            {"time": "8am", "flow": 15},
-            {"time": "10am", "flow": 35},
-            {"time": "12pm", "flow": 60},
-            {"time": "2pm", "flow": 45},
-            {"time": "4pm", "flow": 80},
-        ]
-        return Response(data)
-    
-    
-
 class ReportDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ReportSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
-        # Users can only view/edit/delete their own reports
         return Report.objects.filter(user=self.request.user)
-
 
 class ReportDeleteView(generics.DestroyAPIView):
     serializer_class = ReportSerializer
@@ -316,7 +308,6 @@ class ReportDeleteView(generics.DestroyAPIView):
     def get_queryset(self):
         return Report.objects.filter(user=self.request.user)
     
-
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def ping_server(request):

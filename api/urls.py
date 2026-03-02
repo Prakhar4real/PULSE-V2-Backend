@@ -14,8 +14,7 @@ from .views import (
     ReportDeleteView, 
     AIChatView, 
     GamificationViewSet,
-    NoticeListCreateView,
-    TrafficStatsView  
+    NoticeListCreateView, 
 )
 
 urlpatterns = [
@@ -35,9 +34,6 @@ urlpatterns = [
     path('reports/', ReportListCreateView.as_view(), name='report-list-create'),
     path('reports/<int:pk>/', ReportDetailView.as_view(), name='report-detail'),
     path('reports/<int:pk>/delete/', ReportDeleteView.as_view(), name='report-delete'),
-
-    # --- TRAFFIC STATS ---
-    path('traffic-stats/', TrafficStatsView.as_view(), name='traffic-stats'), 
 
     # --- AI CHAT ---
     path('ai-chat/', AIChatView.as_view(), name='ai-chat'),
