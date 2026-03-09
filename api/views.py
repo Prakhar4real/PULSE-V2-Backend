@@ -12,8 +12,10 @@ from datetime import timedelta
 from django.db.models import Count, Q
 from django.db.models.functions import TruncHour
 from rest_framework.decorators import api_view, permission_classes
-from .models import get_ai_client, get_best_model_name, Report, Profile, Mission, UserMission, Notice
+from .models import Report, Profile, Mission, UserMission, Notice
 from .utils import ai_verify_image  
+from google import genai 
+from rest_framework.exceptions import ValidationError
 
 from .serializers import (
     UserSerializer, 
@@ -26,7 +28,7 @@ from .serializers import (
     ProfileUpdateSerializer 
 )
 
-#CUSTOM PERMISSION
+# CUSTOM PERMISSION
 class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
@@ -95,26 +97,38 @@ class ReportListCreateView(generics.ListCreateAPIView):
         return Report.objects.all().order_by('-created_at')
     
     def perform_create(self, serializer):
-        # --- FIX: CALL AI BEFORE SAVING ---
         image = self.request.FILES.get('image')
         description = self.request.data.get('description', 'Issue report')
         
+        # BACKEND 5MB SIZE CHECK
+        if image and image.size > 5 * 1024 * 1024:
+            from rest_framework.exceptions import ValidationError # Safe inline import
+            raise ValidationError({"error": "Image file size exceeds the 5MB limit. Please upload a smaller file."})
+        
         ai_confidence = 0
         ai_summary = "No image provided."
-        report_status = "pending"
+        report_status = "pending" # Default
 
         if image:
-            
+            # Only call the AI ONCE
             match, confidence, reason = ai_verify_image(image, description)
             ai_confidence = confidence
             ai_summary = reason
             
-            if confidence > 80 and not match:
-                report_status = "rejected"
-            elif match and confidence > 70:
+            if confidence == 0:
+                # AI CRASHED / RATE LIMIT: Fallback
+                report_status = "pending"
+                ai_summary = "AI Network Busy. Queued for manual review."
+            elif match and confidence >= 70:
+                # AI APPROVED
                 report_status = "verified"
+            else:
+                # AI REJECTED
+                report_status = "rejected"
+            
+            if hasattr(image, 'seek'):
+                image.seek(0)
 
-        # Save with AI Data
         instance = serializer.save(
             user=self.request.user,
             ai_confidence=ai_confidence,
@@ -122,7 +136,6 @@ class ReportListCreateView(generics.ListCreateAPIView):
             status=report_status
         )
         
-        # Add Points
         try:
             profile = self.request.user.profile
             profile.points += 10
@@ -130,7 +143,6 @@ class ReportListCreateView(generics.ListCreateAPIView):
         except Exception as e:
             print(f"Gamification Error: {e}")
 
-        # Send SMS
         self.send_sms_alerts(instance)
 
     def send_sms_alerts(self, instance):
@@ -142,7 +154,8 @@ class ReportListCreateView(generics.ListCreateAPIView):
         if sid and token:
             try:
                 client = Client(sid, token)
-                # User SMS
+                
+                #1. USER SMS 
                 try:
                     user_phone = None
                     if hasattr(self.request.user, 'profile') and self.request.user.profile.phone_number:
@@ -158,21 +171,28 @@ class ReportListCreateView(generics.ListCreateAPIView):
                             from_=twilio_phone,
                             to=user_phone
                         )
-                except Exception:
-                    pass # Fail silently for user
+                        print(f"📱 TWILIO: User SMS sent to {user_phone}")
+                    else:
+                        print("⚠️ TWILIO: User has no phone number. Skipping User SMS.")
+                except Exception as e:
+                    print(f"❌ TWILIO USER SMS ERROR: {e}") 
 
-                # Admin SMS
+                # --- 2. ADMIN SMS ---
                 try:
-                    client.messages.create(
-                        body=f"ADMIN ALERT: New Issue '{instance.title}'. AI Confidence: {instance.ai_confidence}%",
-                        from_=twilio_phone,
-                        to=admin_phone
-                    )
-                except Exception:
-                    pass # Fail silently for admin
+                    if admin_phone:
+                        client.messages.create(
+                            body=f"ADMIN ALERT: New Issue '{instance.title}'. AI Confidence: {instance.ai_confidence}%",
+                            from_=twilio_phone,
+                            to=admin_phone
+                        )
+                        print(f"TWILIO: Admin SMS sent to {admin_phone}")
+                    else:
+                        print("⚠️ TWILIO: ADMIN_PHONE_NUMBER is missing in .env")
+                except Exception as e:
+                    print(f"❌ TWILIO ADMIN SMS ERROR: {e}")
 
             except Exception as e:
-                print(f"Twilio Client Error: {e}")
+                print(f"Twilio Client Setup Error: {e}")
 
 # ==========================================
 #  3. AI CHAT VIEW 
@@ -183,23 +203,63 @@ class AIChatView(APIView):
 
     def post(self, request):
         user_message = request.data.get('message', '')
-        context = f"You are PULSE AI. Answer this: {user_message}"
+
+        system_prompt = (
+    "You are PULSE AI, the official in-app assistant for the PULSE Smart City platform. "
+    "PULSE is a gamified civic engagement platform where citizens report local issues "
+    "(such as potholes, garbage, broken streetlights, water leaks, or unsafe areas), "
+    "complete environmental missions, earn XP, unlock badges, and climb leaderboards "
+    "to become top contributors in their city.\n\n"
+
+    "Your primary purpose is to help users understand and use the PULSE app effectively. "
+    "You assist users with things such as:\n"
+    "- How to report civic issues\n"
+    "- How missions work\n"
+    "- How XP, badges, and leaderboards function\n"
+    "- How verification and feedback work\n"
+    "- How to navigate features inside the PULSE platform\n"
+    "- Encouraging positive civic participation and community impact\n\n"
+
+    "Behavior Rules:\n"
+    "1. Only answer questions related to the PULSE platform, civic reporting, missions, "
+    "gamification, or community participation.\n"
+    "2. Do NOT act as a general-purpose AI assistant.\n"
+    "3. Do NOT generate code, essays, stories, poems, homework solutions, or unrelated content.\n"
+    "4. If a user asks something unrelated to PULSE, politely redirect them back to PULSE features.\n"
+    "5. Never invent features that do not exist in the app.\n"
+    "6. Always prioritize clarity and usefulness for citizens using the app.\n\n"
+
+    "Tone and Style:\n"
+    "- Be friendly, encouraging, and community-focused.\n"
+    "- Keep answers concise and practical.\n"
+    "- Avoid long explanations unless necessary.\n"
+    "- Use simple language suitable for everyday users.\n\n"
+
+    "Mission:\n"
+    "Encourage users to actively participate in improving their city through responsible "
+    "reporting, completing missions, and contributing positively to their community."
+)
+
+        context = f"{system_prompt}\n\nUser's Message: {user_message}"
 
         try:
-            # Use the new V2 Client Helper
-            client = get_ai_client()
-            model_name = get_best_model_name() 
+            api_key = config('GEMINI_API_KEY', default=None)
+            if not api_key:
+                return Response({"response": "AI Config Missing"}, status=503)
+
+            client = genai.Client(api_key=api_key)
             
-            if client:
-                response = client.models.generate_content(
-                    model=model_name, 
-                    contents=context
-                )
-                return Response({"response": response.text})
-            return Response({"response": "AI Config Missing"}, status=503)
+            # Use 'gemini-flash-latest' 
+            response = client.models.generate_content(
+                model='gemini-flash-latest', 
+                contents=context
+            )
+            return Response({"response": response.text})
 
         except Exception as e:
-            print(f"AI Error: {e}")
+            print(f"CHATBOT ERROR: {e}")
+            if "429" in str(e):
+                return Response({"response": "I am currently overloaded. Please try again in 1 minute."}, status=200)
             return Response({"response": "AI Service Unavailable"}, status=503)
 
 # ==========================================
@@ -252,26 +312,50 @@ class GamificationViewSet(viewsets.ViewSet):
     def submit_proof(self, request, pk=None):
         try:
             mission = Mission.objects.get(pk=pk)
-            user_mission = UserMission.objects.get(user=request.user, mission=mission)
-            image = request.data.get('image')
+            user_mission = UserMission.objects.filter(user=request.user, mission=mission).first()
             
-            if not image: return Response({'error': 'No image uploaded'}, status=400)
+            # NOTE: We only check if they joined, DO NOT block them if it's "completed"
+            if not user_mission: 
+                return Response({'error': 'Join mission first'}, status=400)
+            
+            image = request.data.get('image')
+            if not image: 
+                return Response({'error': 'No image uploaded'}, status=400)
 
-            # REAL AI LOGIC 
+            # 5MB BACKEND SIZE CHECK
+            if image.size > 5 * 1024 * 1024:
+                return Response({"error": "Image file size exceeds the 5MB limit. Please upload a smaller file."}, status=400)
+
+            # REAL AI LOGIC
             match, confidence, reason = ai_verify_image(image, mission.description)
 
-            if match and confidence > 70:
+            if confidence == 0:
+                # AI CRASHED / RATE LIMIT: Fallback to Manual Review
+                user_mission.status = 'pending'
+                message = "AI Network Busy. Queued for human review."
+                status_resp = 'pending'
+
+            elif match and confidence >= 70:
+                # AI APPROVED: Auto-Accept
                 user_mission.status = 'completed'
                 profile = request.user.profile
                 profile.points += mission.points_reward
                 profile.save()
                 message = f'Verified! You earned {mission.points_reward} XP!'
                 status_resp = 'verified'
+                
             else:
-                message = f'AI could not verify this proof. Reason: {reason}'
+                # AI REJECTED: Hard Reject
+                user_mission.status = 'rejected' 
+                message = f'Proof Rejected by AI: {reason}'
                 status_resp = 'failed'
 
+            if hasattr(image, 'seek'):
+                image.seek(0)
+
+            # This will overwrite their previous image with the newest one
             user_mission.proof_image = image
+            user_mission.ai_analysis = reason
             user_mission.save()
             
             return Response({'status': status_resp, 'message': message, 'confidence': confidence})
@@ -281,7 +365,7 @@ class GamificationViewSet(viewsets.ViewSet):
 
 
 # ==========================================
-#  5. NOTICES & TRAFFIC
+#  5. NOTICES 
 # ==========================================
 
 class NoticeListCreateView(generics.ListCreateAPIView):

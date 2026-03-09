@@ -18,7 +18,7 @@ from .views import (
 )
 
 urlpatterns = [
-    # --- AUTHENTICATION ---
+    # AUTHENTICATION
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('user/register/', RegisterView.as_view(), name='register'),
@@ -27,18 +27,18 @@ urlpatterns = [
     # PROFILE UPDATE URL
     path('user/update/', ProfileUpdateView.as_view(), name='user-update'),
 
-    # --- NOTICES ---
+    # NOTICES 
     path('notices/', NoticeListCreateView.as_view(), name='notice-list'),
 
-    # --- REPORTS ---
+    #REPORTS
     path('reports/', ReportListCreateView.as_view(), name='report-list-create'),
     path('reports/<int:pk>/', ReportDetailView.as_view(), name='report-detail'),
     path('reports/<int:pk>/delete/', ReportDeleteView.as_view(), name='report-delete'),
 
-    # --- AI CHAT ---
+    #AI CHAT
     path('ai-chat/', AIChatView.as_view(), name='ai-chat'),
 
-    # --- GAMIFICATION ---
+    # GAMIFICATION 
     path('leaderboard/', GamificationViewSet.as_view({'get': 'leaderboard'}), name='leaderboard'),
     path('missions/', GamificationViewSet.as_view({'get': 'missions'}), name='missions'),
     path('missions/<int:pk>/join/', GamificationViewSet.as_view({'post': 'join'}), name='mission-join'),
