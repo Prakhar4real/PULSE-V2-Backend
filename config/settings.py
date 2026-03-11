@@ -21,8 +21,8 @@ SECRET_KEY = config('SECRET_KEY')
 
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-# Allow all hosts
-ALLOWED_HOSTS = ['*']
+# allow Secure hosts
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'pulse-v2-backend.onrender.com']
 
 
 # Application definition
@@ -155,10 +155,13 @@ SIMPLE_JWT = {
 }
 
 # CORS SETTINGS
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000", # Allows your local React app
+    "https://pulse-v2-frontend-l7k9.vercel.app", 
+]
 
 # MEDIA FILES (User Uploads)
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
