@@ -39,7 +39,6 @@ class Report(models.Model):
     category = models.CharField(max_length=100, default="Infrastructure")
     location = models.CharField(max_length=255)
 
-    created_at = models.DateTimeField(auto_now_add=True, null=True)
     
     # Image Fields
     image = models.ImageField(upload_to='reports/', max_length=500, blank=True, null=True)
@@ -57,6 +56,9 @@ class Report(models.Model):
     # AI Data
     ai_analysis = models.TextField(blank=True, null=True)
     ai_confidence = models.IntegerField(default=0)
+
+    # Reward Tracking
+    xp_awarded = models.BooleanField(default=False)
     
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -74,7 +76,7 @@ class Mission(models.Model):
         return self.title
 
 class UserMission(models.Model):
-    STATUS_CHOICES = [('pending', 'Pending'), ('completed', 'Completed')]
+    STATUS_CHOICES = [('pending', 'Pending'), ('completed', 'Completed'), ('rejected', 'Rejected'),]
     
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     mission = models.ForeignKey(Mission, on_delete=models.CASCADE)

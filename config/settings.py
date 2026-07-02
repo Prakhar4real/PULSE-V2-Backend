@@ -157,7 +157,7 @@ SIMPLE_JWT = {
 # CORS SETTINGS
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000", # Allows your local React app
+    "http://localhost:3000", # Allows local React app
     "https://pulse-v2-frontend-l7k9.vercel.app", 
 ]
 

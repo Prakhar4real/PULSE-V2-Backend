@@ -35,10 +35,30 @@ admin.site.register(User, UserAdmin)
 # 4. Custom Admin for Reports
 class ReportAdmin(admin.ModelAdmin):
     # This adds the time to the main table list!
-    list_display = ('title', 'user', 'status', 'created_at') 
-    
+    list_display = ('title', 'user', 'status', 'created_at')
+
     # This forces the time to show up on the detailed view page
     readonly_fields = ('created_at', 'ai_analysis', 'ai_confidence')
+
+    def save_model(self, request, obj, form, change):
+        # Existing report being edited
+        if change:
+            previous = Report.objects.get(pk=obj.pk)
+
+            if (
+                previous.status != "verified"
+                and obj.status == "verified"
+                and not obj.xp_awarded
+            ):
+                profile = obj.user.profile
+                profile.points += 10
+                profile.save()
+
+                obj.xp_awarded = True
+
+                print(f"✅ Admin awarded +10 XP to {obj.user.username}")
+
+        super().save_model(request, obj, form, change)
 
 # 5. Custom Admin for User Missions
 class UserMissionAdmin(admin.ModelAdmin):

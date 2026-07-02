@@ -102,30 +102,36 @@ class ReportListCreateView(generics.ListCreateAPIView):
         
         # BACKEND 5MB SIZE CHECK
         if image and image.size > 5 * 1024 * 1024:
-            from rest_framework.exceptions import ValidationError # Safe inline import
+            from rest_framework.exceptions import ValidationError  # Safe inline import
             raise ValidationError({"error": "Image file size exceeds the 5MB limit. Please upload a smaller file."})
         
         ai_confidence = 0
         ai_summary = "No image provided."
-        report_status = "pending" # Default
+        report_status = "pending"  # Default
 
         if image:
             # Only call the AI ONCE
             match, confidence, reason = ai_verify_image(image, description)
             ai_confidence = confidence
             ai_summary = reason
-            
+
             if confidence == 0:
                 # AI CRASHED / RATE LIMIT: Fallback
                 report_status = "pending"
                 ai_summary = "AI Network Busy. Queued for manual review."
-            elif match and confidence >= 70:
-                # AI APPROVED
-                report_status = "verified"
+
+            elif match:
+                if confidence >= 70:
+                    # AI APPROVED
+                    report_status = "verified"
+                else:
+                    # AI thinks the image matches but isn't confident
+                    report_status = "pending"
+
             else:
-                # AI REJECTED
+                # AI is confident the image does NOT match
                 report_status = "rejected"
-            
+
             if hasattr(image, 'seek'):
                 image.seek(0)
 
@@ -135,11 +141,19 @@ class ReportListCreateView(generics.ListCreateAPIView):
             ai_analysis=ai_summary,
             status=report_status
         )
-        
+
         try:
-            profile = self.request.user.profile
-            profile.points += 10
-            profile.save()
+            if instance.status == "verified" and not instance.xp_awarded:
+                profile = self.request.user.profile
+                profile.points += 10
+                profile.save()
+
+                instance.xp_awarded = True
+                instance.save(update_fields=["xp_awarded"])
+                print("✅ XP Awarded: +10")
+            else:
+                print(f"No XP awarded. Report status: {instance.status}")
+
         except Exception as e:
             print(f"Gamification Error: {e}")
 
@@ -149,13 +163,13 @@ class ReportListCreateView(generics.ListCreateAPIView):
         sid = config('TWILIO_ACCOUNT_SID', default=None)
         token = config('TWILIO_AUTH_TOKEN', default=None)
         twilio_phone = config('TWILIO_PHONE_NUMBER', default=None)
-        admin_phone = config('ADMIN_PHONE_NUMBER', default=None) 
+        admin_phone = config('ADMIN_PHONE_NUMBER', default=None)
 
         if sid and token:
             try:
                 client = Client(sid, token)
-                
-                #1. USER SMS 
+
+                # 1. USER SMS
                 try:
                     user_phone = None
                     if hasattr(self.request.user, 'profile') and self.request.user.profile.phone_number:
@@ -175,7 +189,7 @@ class ReportListCreateView(generics.ListCreateAPIView):
                     else:
                         print("⚠️ TWILIO: User has no phone number. Skipping User SMS.")
                 except Exception as e:
-                    print(f"❌ TWILIO USER SMS ERROR: {e}") 
+                    print(f"❌ TWILIO USER SMS ERROR: {e}")
 
                 # --- 2. ADMIN SMS ---
                 try:

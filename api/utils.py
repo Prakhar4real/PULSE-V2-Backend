@@ -26,7 +26,7 @@ def ai_verify_image(image, description="General anomaly"):
         "Ignore points, XP, rewards, or any gamification elements. Focus strictly on visual verification. "
         "If the main subject related to the description is clearly visible, mark it as a match. "
         "If the image is blurry, unrelated, unclear, or does not provide sufficient visual evidence, mark it as not a match. "
-        "Be conservative: if you are uncertain, return match as false. "
+        "If the image appears to depict the reported issue but you are not completely certain, return match as true and use a lower confidence score. Return match as false only when the image is clearly unrelated or does not depict the reported issue."
         "Return JSON ONLY with these exact fields: "
         "'match' (boolean indicating whether the image matches the description), "
         "'confidence' (integer between 0 and 100 indicating certainty), "
@@ -78,8 +78,6 @@ def ai_verify_image(image, description="General anomaly"):
             
             confidence = int(data.get('confidence', 0))
             reason = data.get('reason', "AI processed image.")
-            
-            if confidence < 70: match = False
 
             print(f"✅ AI SUCCESS: Match={match}, Confidence={confidence}%")
             return match, confidence, reason
